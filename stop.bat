@@ -1,2 +1,2 @@
-wsl docker compose -f docker-compose.yml down
+wsl docker compose -f docker-compose.yaml down
 pause

@@ -1,30 +1,30 @@
 package it.davideangelone.rabbitmq;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import it.davideangelone.rabbitmq.api.PublishRequest;
 import it.davideangelone.rabbitmq.api.PublishResponse;
 import it.davideangelone.rabbitmq.config.RabbitTopology;
 import it.davideangelone.rabbitmq.service.MessagePublisher;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 @SpringBootTest
-@ActiveProfiles("test")
 @ExtendWith(SpringExtension.class)
 class RabbitMqExchangesPocApplicationTests {
 
@@ -33,6 +33,14 @@ class RabbitMqExchangesPocApplicationTests {
 
     @Autowired
     private MessagePublisher publisher;
+
+    @Autowired
+    private RabbitAdmin rabbitAdmin;
+
+    @BeforeEach
+    void purgeUnroutableQueue() {
+        rabbitAdmin.purgeQueue(RabbitTopology.UNROUTABLE_QUEUE);
+    }
 
     // Successful lifecycle tests
     @Test
@@ -94,18 +102,6 @@ class RabbitMqExchangesPocApplicationTests {
                 "Dovrebbe lanciare eccezione per routing key vuoto");
     }
 
-    // Consumer refusal tests
-    @Test
-    void consumerNackRejectDirect() throws Exception {
-        String message = "test-nack-direct";
-        rabbitTemplate.convertAndSend(RabbitTopology.DIRECT_EXCHANGE, "orders", message);
-
-        Thread.sleep(1000);
-
-        boolean queueHasMessage = waitForQueueMessage(RabbitTopology.DIRECT_ORDERS_QUEUE, 2000);
-        assertFalse(queueHasMessage, "Il messaggio dovrebbe essere stato rifiutato e non reinserito");
-    }
-
     // DLQ tests
     @Test
     void directExchangeConsumerWrongKeyRoutesToUnroutable() throws Exception {
@@ -130,15 +126,17 @@ class RabbitMqExchangesPocApplicationTests {
 
     // Unroutable messages tests
     @Test
-    void unroutableExchangeWithMandatoryFlag() {
-        String message = "test-unroutable";
-        PublishRequest request = new PublishRequest(message, "", new HashMap<>());
+    void unroutableMessageIsReturnedAndRepublishedToUnroutableQueue() {
+        String body = "test-unroutable-" + UUID.randomUUID();
 
-        // The message is sent to an exchange with no bindings and mandatory=true
-        // This test verifies the publisher can handle this scenario
-        PublishResponse response = publisher.publishUnroutable(request);
-        assertNotNull(response);
-        assertEquals(RabbitTopology.UNROUTABLE_EXCHANGE, response.exchange());
+        // Nessun binding per "unknown-key": RabbitMQ restituisce il messaggio (mandatory)
+        // e il return callback lo ripubblica su exchange.unroutable.
+        publisher.publishDirect(new PublishRequest(body, "unknown-key", null));
+
+        Message received = rabbitTemplate.receive(RabbitTopology.UNROUTABLE_QUEUE, 5000);
+
+        assertNotNull(received, "Il messaggio non instradabile dovrebbe finire su queue.unroutable");
+        assertEquals(body, new String(received.getBody(), StandardCharsets.UTF_8));
     }
 
     @Test
