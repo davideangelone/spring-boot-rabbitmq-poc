@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: rabbitmq-exchanges-poc
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: rabbit
+    password: rabbit
+    virtual-host: /
+    connection-timeout: 5s
+    publisher-returns: true
+    publisher-confirm-type: correlated
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+
+logging:
+  level:
+    it.davideangelone.rabbitmq: INFO
+    org.springframework.amqp: INFO
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
