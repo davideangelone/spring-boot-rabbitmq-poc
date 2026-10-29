@@ -20,6 +20,11 @@ import org.springframework.context.annotation.Configuration;
 @Slf4j
 public class RabbitConfiguration {
 
+    // Header aggiunti ai messaggi ripubblicati su exchange.unroutable
+    public static final String HEADER_ORIGINAL_EXCHANGE = "x-original-exchange";
+    public static final String HEADER_ORIGINAL_ROUTING_KEY = "x-original-routing-key";
+    public static final String HEADER_REPLY_TEXT = "x-reply-text";
+
     @Bean
     RabbitAdmin rabbitAdmin(ConnectionFactory connectionFactory, List<Queue> queues, List<Exchange> exchanges) {
         return new ResettingRabbitAdmin(connectionFactory, queues, exchanges);
@@ -79,6 +84,11 @@ public class RabbitConfiguration {
                         returned.getRoutingKey(),
                         body
                 );
+
+                // Conserva il contesto originale: sulla queue.unroutable altrimenti resterebbero solo corpo e header.
+                message.getMessageProperties().setHeader(HEADER_ORIGINAL_EXCHANGE, returned.getExchange());
+                message.getMessageProperties().setHeader(HEADER_ORIGINAL_ROUTING_KEY, returned.getRoutingKey());
+                message.getMessageProperties().setHeader(HEADER_REPLY_TEXT, returned.getReplyText());
 
                 sendToUnroutableExchange(template, message, correlationData);
             });

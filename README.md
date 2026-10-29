@@ -121,7 +121,14 @@ Il campo `message` è sempre richiesto. I campi `routingKey` e `headers` sono ut
 
 ## Messaggi non instradabili e DLQ
 
-**Messaggi non instradabili.** Il `RabbitTemplate` pubblica con il flag `mandatory`: se RabbitMQ non riesce a instradare un messaggio verso nessuna queue, lo restituisce all'applicazione, che lo ripubblica sul fanout exchange `exchange.unroutable` (collegato a `queue.unroutable`) e scrive un warning nel log con exchange e routing key originali. Nella queue restano il corpo e gli header del messaggio, non l'exchange e la routing key di origine: per quelli vedi il log. Su `queue.unroutable` non c'è nessun consumer, quindi i messaggi restano visibili nella Management UI.
+**Messaggi non instradabili.** Il `RabbitTemplate` pubblica con il flag `mandatory`: se RabbitMQ non riesce a instradare un messaggio verso nessuna queue, lo restituisce all'applicazione, che lo ripubblica sul fanout exchange `exchange.unroutable` (collegato a `queue.unroutable`) e scrive un warning nel log con exchange e routing key originali. Prima della ripubblicazione aggiunge al messaggio gli header `x-original-exchange`, `x-original-routing-key` e `x-reply-text` (motivo restituito dal broker, ad esempio `NO_ROUTE`), visibili nella Management UI. Su `queue.unroutable` non c'è nessun consumer, quindi i messaggi restano consultabili.
+
+E' stata usata una callback invece di un *alternate exchange* nativo di RabbitMQ in quanto l'alternate exchange è gestito interamente dal broker e l'applicazione non ne viene informata, quindi non potrebbe scrivere il log. Usando invece `mandatory` e la callback il broker restituisce il messaggio all'applicazione, che può loggarlo. 
+
+I limiti di questa scelta sono:
+
+- la ripubblicazione non è atomica: se l'applicazione o il broker si fermano tra la restituzione e il nuovo invio, il messaggio va perso (con un alternate exchange questo non accade);
+- vengono intercettati solo i messaggi pubblicati da questo `RabbitTemplate`, non quelli di altri client sullo stesso broker.
 
 **Dead letter queue.** Le sette queue applicative sono dichiarate con `x-dead-letter-exchange=exchange.dlx` e routing key `dead-letter`, che porta alla queue `queue.dlq`. Con `default-requeue-rejected: false`, un messaggio il cui listener solleva un'eccezione viene rifiutato senza rimessa in coda e quindi inoltrato alla DLQ. I consumer del POC si limitano a loggare il messaggio, perciò in uso normale `queue.dlq` resta vuota. Anche su `queue.dlq` non c'è nessun consumer.
 
